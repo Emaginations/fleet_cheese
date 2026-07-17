@@ -1,0 +1,10 @@
+# 根目录
+_ref*.png
+_ref*.jpeg
+*.pyc
+__pycache__/
+
+# API Key - 绝不提交
+api_key.txt
+*.env
+test_api.py
