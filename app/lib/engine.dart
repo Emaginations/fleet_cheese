@@ -139,17 +139,16 @@ class RulesEngine {
   }
 
   List<Pos> _bombardTargetsOnLine(Pos origin, Pos dir, Side side) {
+    // 可跨任意个我方棋子 + 至多1个敌方棋子；沿线所有可达位置（空格/棋子）均可锁定
     final targets = <Pos>[];
-    int piecesFound = 0;
+    int enemyPassed = 0;
     Pos cur = origin + dir;
     while (cur.inBoard) {
       final pc = board.at(cur);
-      if (pc != null) {
-        piecesFound++;
-        if (piecesFound >= 2) break; // 至多越过1颗棋子（炮架）
-      }
-      if (piecesFound == 1) {
-        targets.add(cur); // 炮架自身及之后位置均为有效目标
+      targets.add(cur);
+      if (pc != null && pc.side != side) {
+        enemyPassed++;
+        if (enemyPassed >= 2) break; // 第2个敌方棋子可锁定但不可再越过
       }
       cur = cur + dir;
     }

@@ -340,6 +340,12 @@ class _GridPainter extends CustomPainter {
           Offset(_px(0), _py(y)), Offset(_px(12), _py(y)), gridPaint);
     }
 
+    // 海域分界带：y=6与y=7两条线之间涂白，中央标注
+    final seaRect = Rect.fromLTRB(_px(0), _py(7), _px(12), _py(6));
+    canvas.drawRect(seaRect, Paint()..color = kGridLine);
+    _drawText(canvas, '海 域 分 界', seaRect.center,
+        color: const Color(0xFF6B8E98), fontSize: cell * 0.5, centerV: true);
+
     // 指挥区（虚线黑框）：交叉点x∈[4,8] y∈[0,4]/[9,13]
     final dashPaint = Paint()
       ..color = Colors.black
