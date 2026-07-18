@@ -91,6 +91,12 @@ class GameRecorder {
     _save();
   }
 
+  /// 注释行（结算结果等）
+  void recordComment(String comment) {
+    lines.add('# $comment');
+    _save();
+  }
+
   /// 悔棋：截断到指定行数
   void truncate(int lineCount) {
     if (lineCount < lines.length) {

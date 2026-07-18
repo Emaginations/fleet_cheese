@@ -168,6 +168,7 @@ class _BoardWidgetState extends State<BoardWidget> {
             children: [
               // 网格与标记层
               Positioned.fill(
+                key: const ValueKey('grid-layer'),
                 child: CustomPaint(
                   painter: _GridPainter(
                     cell: cell,
@@ -204,6 +205,7 @@ class _BoardWidgetState extends State<BoardWidget> {
                 ),
               // 点击层：最近交叉点
               Positioned.fill(
+                key: const ValueKey('tap-layer'),
                 child: GestureDetector(
                   behavior: HitTestBehavior.translucent,
                   onTapUp: (d) {
@@ -230,6 +232,7 @@ class _BoardWidgetState extends State<BoardWidget> {
     return [
       for (int i = 0; i < pieces.length; i++)
         Positioned(
+          key: ValueKey('captured-${pieces[i].id}'),
           left: baseX +
               (areaW - size) * ((pieces[i].id * 37 % 89) / 89.0),
           top: (12.0 + i * (h - size - 20) / (pieces.length.clamp(1, 99))) +
@@ -336,15 +339,6 @@ class _GridPainter extends CustomPainter {
       canvas.drawLine(
           Offset(_px(0), _py(y)), Offset(_px(12), _py(y)), gridPaint);
     }
-
-    // 海域分界：y=6与y=7两条线之间的中线，加粗
-    final seaPaint = Paint()
-      ..color = kGridLine
-      ..strokeWidth = 3.0;
-    final seaY = (_py(6) + _py(7)) / 2;
-    canvas.drawLine(Offset(_px(0), seaY), Offset(_px(12), seaY), seaPaint);
-    _drawText(canvas, '· 海 域 分 界 ·', Offset(_px(6), seaY),
-        color: Colors.black45, fontSize: cell * 0.4, centerV: true);
 
     // 指挥区（虚线黑框）：交叉点x∈[4,8] y∈[0,4]/[9,13]
     final dashPaint = Paint()

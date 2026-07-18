@@ -17,7 +17,7 @@ void main() {
       final b = Board.initial();
       expect(b.at(const Pos(6, 0))!.type, PieceType.flagship);
       expect(b.at(const Pos(3, 0))!.type, PieceType.awacs);
-      expect(b.at(const Pos(0, 2))!.type, PieceType.cruiser);
+      expect(b.at(const Pos(1, 2))!.type, PieceType.cruiser);
       expect(b.at(const Pos(3, 4))!.type, PieceType.submarine);
       expect(b.at(const Pos(0, 5))!.type, PieceType.destroyer);
     });
@@ -67,7 +67,7 @@ void main() {
       final b = Board.initial();
       final j = b.at(const Pos(2, 0))!;
       final moves = RulesEngine(b).validMoves(j);
-      expect(moves.contains(const Pos(1, 2)), true);
+      expect(moves.contains(const Pos(1, 2)), false); // (1,2)有己方巡洋舰
       expect(moves.contains(const Pos(3, 2)), true);
     });
 
@@ -113,79 +113,71 @@ void main() {
       expect(c.recorder.lines.isEmpty, true);
     });
 
-    test('轰炸延迟结算：敌回合结束时生效', () {
+    test('轰炸延迟结算：敌回合结束时生效（走入雷区）', () {
       final c = makeGame();
       final s = c.state;
-      // 红巡(6,2)沿y+轰炸(6,8)——路径(6,3)~(6,7)…(6,5)有红驱可跨，(6,8)有蓝驱
+      // 红巡(6,2)沿y+：炮架(6,5)红驱，可打(6,5)~(6,7)；(6,8)蓝驱为第二颗不可打
       c.ensureSnapshotForAction();
       final cruiser = s.board.at(const Pos(6, 2))!;
-      final rb = c.tryBombard(cruiser.id, const Pos(6, 8));
+      expect(c.tryBombard(cruiser.id, const Pos(6, 8)).ok, false,
+          reason: '第二颗棋子(6,8)不应在射程内（炮架规则）');
+      final rb = c.tryBombard(cruiser.id, const Pos(6, 7));
       expect(rb.ok, true, reason: rb.error ?? '');
       // 红方移动结束回合
       expect(c.tryMove(const Pos(0, 5), const Pos(0, 6)).ok, true);
-      // 蓝方(6,8)驱仍在
-      expect(s.board.at(const Pos(6, 8)), isNotNull);
-      // 蓝方走别处，回合结束时轰炸结算
+      // 蓝方(6,8)驱走进轰炸点(6,7)
       c.ensureSnapshotForAction();
-      expect(c.tryMove(const Pos(12, 8), const Pos(12, 7)).ok, true);
-      expect(s.board.at(const Pos(6, 8)), isNull); // 被炸毁
+      expect(c.tryMove(const Pos(6, 8), const Pos(6, 7)).ok, true);
+      // 蓝回合结束时结算：走入雷区被炸
+      expect(s.board.at(const Pos(6, 7)), isNull, reason: '走入轰炸点的蓝驱应被击沉');
       expect(s.current, Side.red);
     });
 
     test('跨三回合双方分批轰炸结算正确', () {
-      // 模拟用户报告场景：
-      // T1红轰炸(0,8)蓝驱 → T2蓝轰炸(0,5)红驱 → T3红走子时结算(0,8)应命中且(0,5)应仍在队列
       final c = makeGame();
       final s = c.state;
 
-      // T1红: 红巡(0,2)沿y+轰炸(0,8)——路径有红驱(0,5)可越过1颗, 目标(0,8)蓝驱
+      // T1红: 轰(6,7)（炮架(6,5)红驱），走(0,5)->(0,6)
       c.ensureSnapshotForAction();
-      final redCruiser = s.board.at(const Pos(0, 2))!;
-      expect(c.tryBombard(redCruiser.id, const Pos(0, 8)).ok, true,
-          reason: '红巡(0,2)应能轰炸(0,8)');
+      final redCruiser = s.board.at(const Pos(6, 2))!;
+      expect(c.tryBombard(redCruiser.id, const Pos(6, 7)).ok, true);
+      expect(c.tryMove(const Pos(0, 5), const Pos(0, 6)).ok, true);
       expect(s.awaitingResolve[Side.red]!.length, 1);
-      // 红方走子结束T1
-      expect(c.tryMove(const Pos(6, 5), const Pos(6, 6)).ok, true);
-      expect(s.current, Side.blue);
-      // T1末无结算（蓝无待处理），红轰炸仍在等待
-      expect(s.awaitingResolve[Side.red]!.length, 1,
-          reason: '红轰炸应等待蓝回合结束才结算');
 
-      // T2蓝: 蓝巡(0,11)沿y-轰炸(0,5)——路径有蓝驱(0,8)可越过1颗，目标(0,5)红驱
+      // T2蓝: 轰(6,6)（蓝巡(6,11)沿y-炮架(6,8)蓝驱，可打(6,8)~(6,6)），走(12,8)->(12,7)
       c.ensureSnapshotForAction();
-      final blueCruiser = s.board.at(const Pos(0, 11))!;
-      expect(c.tryBombard(blueCruiser.id, const Pos(0, 5)).ok, true,
-          reason: '蓝巡(0,11)应能轰炸(0,5)');
+      final blueCruiser = s.board.at(const Pos(6, 11))!;
+      expect(c.tryBombard(blueCruiser.id, const Pos(6, 6)).ok, true,
+          reason: '蓝巡应能轰炸(6,6)');
       expect(s.awaitingResolve[Side.blue]!.length, 1);
-      // 蓝方走子结束T2
       expect(c.tryMove(const Pos(12, 8), const Pos(12, 7)).ok, true);
-      // T2末尾→红轰炸结算：红轰炸的(0,8)应命中
-      expect(s.board.at(const Pos(0, 8)), isNull, reason: '(0,8)蓝驱应在T2末被红轰炸命中');
-      expect(s.awaitingResolve[Side.red]!.length, 0);
-      expect(s.current, Side.red, reason: '回合已切换至红方T3');
-      // 蓝轰炸(0,5)应仍在等待
+      // T2末: 红轰炸(6,7)结算（空格落空），蓝轰炸仍在等待
+      expect(s.awaitingResolve[Side.red]!.length, 0, reason: '红轰炸已结算');
       expect(s.awaitingResolve[Side.blue]!.length, 1,
-          reason: '蓝轰炸(0,5)应等待红T3结束才结算');
+          reason: '蓝轰炸(6,6)应等待红T3结束才结算');
+      expect(s.current, Side.red);
 
-      // T3红: 走子结束 → 应结算蓝轰炸(0,5)
+      // T3红: 驱(6,5)->(6,6)走进蓝方轰炸点
       c.ensureSnapshotForAction();
-      expect(c.tryMove(const Pos(6, 6), const Pos(6, 7)).ok, true);
-      expect(s.board.at(const Pos(0, 5)), isNull,
-          reason: '(0,5)红驱应在T3末被蓝轰炸命中');
+      expect(c.tryMove(const Pos(6, 5), const Pos(6, 6)).ok, true);
+      // T3末: 蓝轰炸结算，(6,6)红驱被击沉
+      expect(s.board.at(const Pos(6, 6)), isNull,
+          reason: '(6,6)红驱应在T3末被蓝轰炸命中');
       expect(s.awaitingResolve[Side.blue]!.length, 0);
     });
 
     test('轰炸后目标逃走则落空', () {
       final c = makeGame();
       final s = c.state;
+      // 红巡(6,2)轰炮架自身(6,5)红驱（误伤测试），随后红驱逃走
       c.ensureSnapshotForAction();
       final cruiser = s.board.at(const Pos(6, 2))!;
-      expect(c.tryBombard(cruiser.id, const Pos(6, 8)).ok, true);
-      expect(c.tryMove(const Pos(0, 5), const Pos(0, 6)).ok, true);
-      // 蓝方(6,8)驱逃走
+      expect(c.tryBombard(cruiser.id, const Pos(6, 5)).ok, true);
+      expect(c.tryMove(const Pos(6, 5), const Pos(6, 6)).ok, true); // 目标逃离
       c.ensureSnapshotForAction();
-      expect(c.tryMove(const Pos(6, 8), const Pos(6, 7)).ok, true);
-      expect(s.board.at(const Pos(6, 7)), isNotNull); // 逃走成功存活
+      expect(c.tryMove(const Pos(12, 8), const Pos(12, 7)).ok, true);
+      // 结算落空：逃走的红驱存活
+      expect(s.board.at(const Pos(6, 6)), isNotNull);
     });
 
     test('开火的巡洋舰当回合不能移动', () {
@@ -193,7 +185,8 @@ void main() {
       final s = c.state;
       c.ensureSnapshotForAction();
       final cruiser = s.board.at(const Pos(6, 2))!;
-      expect(c.tryBombard(cruiser.id, const Pos(6, 8)).ok, true);
+      expect(c.tryBombard(cruiser.id, const Pos(6, 5)).ok, true,
+          reason: '炮架(6,5)红驱自身应可作为目标');
       final r = c.tryMove(const Pos(6, 2), const Pos(6, 3));
       expect(r.ok, false);
     });

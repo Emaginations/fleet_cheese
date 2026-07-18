@@ -136,7 +136,7 @@ class Board {
     add(PieceType.escort, Side.red, 7, 0);
     add(PieceType.awacs, Side.red, 9, 0);
     add(PieceType.aircraft, Side.red, 10, 0);
-    for (final x in [0, 6, 12]) {
+    for (final x in [1, 6, 11]) {
       add(PieceType.cruiser, Side.red, x, 2);
     }
     add(PieceType.submarine, Side.red, 3, 4);

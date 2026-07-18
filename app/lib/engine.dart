@@ -140,18 +140,17 @@ class RulesEngine {
 
   List<Pos> _bombardTargetsOnLine(Pos origin, Pos dir, Side side) {
     final targets = <Pos>[];
-    int skipped = 0;
+    int piecesFound = 0;
     Pos cur = origin + dir;
     while (cur.inBoard) {
       final pc = board.at(cur);
       if (pc != null) {
-        targets.add(cur); // 有棋子占位的格子也可打击
-        if (skipped >= 1) break; // 至多越过1颗棋子
-        skipped++;
-        cur = cur + dir;
-        continue;
+        piecesFound++;
+        if (piecesFound >= 2) break; // 至多越过1颗棋子（炮架）
       }
-      targets.add(cur);
+      if (piecesFound == 1) {
+        targets.add(cur); // 炮架自身及之后位置均为有效目标
+      }
       cur = cur + dir;
     }
     return targets;
@@ -279,6 +278,17 @@ class GameController {
     if (state.winner == null) {
       final opponent = state.current.opponent;
       state.lastResults = _resolveBombards(opponent);
+      // 结算结果写入棋谱（#注释行，AI与回放可参考）
+      if (state.lastResults.isNotEmpty) {
+        final parts = state.lastResults.map((r) {
+          final t = r.order.target.qp;
+          if (r.intercepted) return '轰$t被拦截';
+          if (r.immune) return '轰$t潜艇免疫';
+          if (r.hit) return '轰$t击沉${r.victimName ?? ''}';
+          return '轰$t落空';
+        }).join('；');
+        recorder.recordComment('结算：${opponent.label}方$parts');
+      }
     }
 
     // 终局落盘

@@ -72,12 +72,20 @@ class _SettingsFloatingBallState extends State<_SettingsFloatingBall> {
     if (mounted) setState(() {});
   }
 
-  void _openSettings() {
+  bool _settingsOpen = false;
+
+  Future<void> _openSettings() async {
     final nav = rootNavigatorKey.currentState;
     if (nav == null) return;
-    nav.push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
-    // 返回时 SettingsScreen 内的每次修改已通过 AppSettings.save() → notifier 广播，
-    // 各页面用 ValueListenableBuilder 监听后实时重建。
+    // 再次点击：关闭已打开的设置页
+    if (_settingsOpen) {
+      nav.pop();
+      return;
+    }
+    _settingsOpen = true;
+    await nav.push(MaterialPageRoute(builder: (_) => const SettingsScreen()));
+    _settingsOpen = false;
+    // 每次修改已通过 AppSettings.save() → notifier 广播，各页面实时重建。
   }
 
   @override
