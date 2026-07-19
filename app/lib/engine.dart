@@ -139,22 +139,23 @@ class RulesEngine {
   }
 
   List<Pos> _bombardTargetsOnLine(Pos origin, Pos dir, Side side) {
-    // 必须至少越过1颗棋子（任意阵营）才能攻击。首颗棋子位置起为有效目标（含首子自身），
-    // 跨越第二个敌方棋子时该敌方棋子可锁定但不可再越过。
+    // 必须恰好越过1颗棋子（任意阵营）作为炮架，炮架自身不可打，
+    // 炮架后方所有空格（至下一颗棋子前）为有效目标
     final targets = <Pos>[];
-    bool behindScreen = false;
+    bool foundScreen = false;
     Pos cur = origin + dir;
     while (cur.inBoard) {
       final pc = board.at(cur);
       if (pc != null) {
-        if (!behindScreen) {
-          behindScreen = true; // 遇到首颗棋子——炮架，后方皆可打
-        } else if (pc.side != side) {
-          targets.add(cur); // 第二颗敌方棋子可锁定
-          break; // 不可再越过
+        if (!foundScreen) {
+          foundScreen = true; // 第一颗棋子 = 炮架，跳过
+          cur = cur + dir;
+          continue;
+        } else {
+          break; // 第二颗棋子 = 阻挡，不可再打
         }
       }
-      if (behindScreen) targets.add(cur);
+      if (foundScreen) targets.add(cur);
       cur = cur + dir;
     }
     return targets;

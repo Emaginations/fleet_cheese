@@ -52,12 +52,12 @@ class _GameScreenState extends State<GameScreen> {
   void dispose() {
     _stopped = true;
     AppSettings.notifier.removeListener(_onSettingsChanged);
-    // 对局未完成：保存棋局供下次续局
     if (_state.winner == null && _state.ply > 0) {
       SaveGame.save(widget.mode.name, _state, List.of(_recorder.lines));
     } else {
       SaveGame.clear(widget.mode.name);
     }
+    AIClient.flushAll();
     super.dispose();
   }
 

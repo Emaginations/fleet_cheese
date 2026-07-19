@@ -116,17 +116,16 @@ void main() {
     test('轰炸延迟结算：敌回合结束时生效（走入雷区）', () {
       final c = makeGame();
       final s = c.state;
-      // 红巡(6,2)沿y+：可跨友方(6,5)红驱+至多1敌方(6,8)蓝驱，射程至(6,11)含蓝巡
+      // 红巡(6,2)沿y+：炮架(6,5)红驱，后方可打(6,6)(6,7)；(6,8)蓝驱为第二颗阻挡不可再打
       c.ensureSnapshotForAction();
       final cruiser = s.board.at(const Pos(6, 2))!;
-      // (6,12)在第二颗敌方(6,11)之后，不可达
-      expect(c.tryBombard(cruiser.id, const Pos(6, 12)).ok, false,
-          reason: '(6,12)在第二颗敌方之后不应在射程内');
-      final direct = c.tryBombard(cruiser.id, const Pos(6, 8));
-      expect(direct.ok, true, reason: '第一颗敌方(6,8)可直接锁定：${direct.error ?? ''}');
-      // 撤销，改打(6,7)继续雷区测试
-      s.awaitingResolve[Side.red]!.clear();
-      s.board.byId(cruiser.id)!.firedThisTurn = false;
+      // (6,5)为炮架自身不可打
+      expect(c.tryBombard(cruiser.id, const Pos(6, 5)).ok, false,
+          reason: '炮架自身不可打');
+      // (6,8)为第二颗棋子之后不可打
+      expect(c.tryBombard(cruiser.id, const Pos(6, 8)).ok, false,
+          reason: '第二颗棋子之后不可打');
+      // (6,7)有效
       final rb = c.tryBombard(cruiser.id, const Pos(6, 7));
       expect(rb.ok, true, reason: rb.error ?? '');
       // 红方移动结束回合
@@ -172,18 +171,19 @@ void main() {
       expect(s.awaitingResolve[Side.blue]!.length, 0);
     });
 
-    test('轰炸后目标逃走则落空', () {
+    test('轰炸炮架后方空格落空', () {
       final c = makeGame();
       final s = c.state;
-      // 红巡(6,2)轰炮架自身(6,5)红驱（误伤测试），随后红驱逃走
+      // 红巡(6,2)沿y+，炮架(6,5)红驱，后方(6,6)空格，轰炸落空
       c.ensureSnapshotForAction();
       final cruiser = s.board.at(const Pos(6, 2))!;
-      expect(c.tryBombard(cruiser.id, const Pos(6, 5)).ok, true);
-      expect(c.tryMove(const Pos(6, 5), const Pos(6, 6)).ok, true); // 目标逃离
+      expect(c.tryBombard(cruiser.id, const Pos(6, 6)).ok, true); // 后方空格可打
+      expect(c.tryMove(const Pos(0, 5), const Pos(0, 6)).ok, true);
       c.ensureSnapshotForAction();
       expect(c.tryMove(const Pos(12, 8), const Pos(12, 7)).ok, true);
-      // 结算落空：逃走的红驱存活
-      expect(s.board.at(const Pos(6, 6)), isNotNull);
+      // 结算：(6,6)仍为空 → 落空
+      expect(s.current, Side.red);
+      expect(s.board.at(const Pos(6, 6)), isNull);
     });
 
     test('开火的巡洋舰当回合不能移动', () {
@@ -191,8 +191,9 @@ void main() {
       final s = c.state;
       c.ensureSnapshotForAction();
       final cruiser = s.board.at(const Pos(6, 2))!;
-      expect(c.tryBombard(cruiser.id, const Pos(6, 5)).ok, true,
-          reason: '炮架(6,5)红驱自身应可作为目标');
+      // (6,6)在炮架(6,5)后方，为有效目标
+      expect(c.tryBombard(cruiser.id, const Pos(6, 6)).ok, true,
+          reason: '(6,6)在炮架后方应为有效目标');
       final r = c.tryMove(const Pos(6, 2), const Pos(6, 3));
       expect(r.ok, false);
     });

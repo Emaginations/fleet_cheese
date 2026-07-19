@@ -17,6 +17,7 @@ class ApiProvider {
 }
 
 const List<ApiProvider> kApiProviders = [
+  ApiProvider('587', '587 (免费试用)', 'https://api.587.lol/v1', '5', 0xFF7C3AED),
   ApiProvider('deepseek', 'DeepSeek', 'https://api.deepseek.com/v1', 'D', 0xFF4D6BFE),
   ApiProvider('doubao', '豆包(火山方舟)', 'https://ark.cn-beijing.volces.com/api/v3', '豆', 0xFF00C8B4),
   ApiProvider('google', '谷歌 Gemini', 'https://generativelanguage.googleapis.com/v1beta/openai', 'G', 0xFF4285F4),
