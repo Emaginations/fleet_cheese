@@ -37,8 +37,13 @@ class AppSettings {
   static SharedPreferences? _prefs;
 
   static String providerId = 'deepseek';
-  static String apiKey = '';
   static String model = 'deepseek-v4-flash';
+
+  /// 每个 API 服务商独立的 Key
+  static final Map<String, String> apiKeys = {};
+
+  static String get apiKey => apiKeys[providerId] ?? '';
+  static set apiKey(String v) => apiKeys[providerId] = v;
 
   /// AI对战中玩家执方
   static Side mySide = Side.red;
@@ -66,7 +71,18 @@ class AppSettings {
       _prefs = await SharedPreferences.getInstance();
       final p = _prefs!;
       providerId = p.getString('providerId') ?? 'deepseek';
-      apiKey = p.getString('apiKey') ?? '';
+      // 迁移单 Key → 多 Key；优先读取各提供商独立 Key，兼容旧版 apiKey
+      final keysJson = p.getString('apiKeys');
+      if (keysJson != null) {
+        final decoded = jsonDecode(keysJson) as Map<String, dynamic>;
+        apiKeys.clear();
+        for (final e in decoded.entries) { apiKeys[e.key] = e.value.toString(); }
+      }
+      final oldKey = p.getString('apiKey') ?? '';
+      if (oldKey.isNotEmpty && !apiKeys.containsKey(providerId)) {
+        apiKeys[providerId] = oldKey; // 迁移旧 Key 到当前提供商
+        await p.remove('apiKey');
+      }
       model = p.getString('model') ?? 'deepseek-v4-flash';
       mySide = (p.getString('mySide') ?? 'red') == 'blue' ? Side.blue : Side.red;
       final fm = p.getString('firstMover') ?? 'random';
@@ -87,7 +103,7 @@ class AppSettings {
     try {
       final p = _prefs ??= await SharedPreferences.getInstance();
       await p.setString('providerId', providerId);
-      await p.setString('apiKey', apiKey);
+      await p.setString('apiKeys', jsonEncode(apiKeys));
       await p.setString('model', model);
       await p.setString('mySide', mySide == Side.blue ? 'blue' : 'red');
       await p.setString('firstMover',

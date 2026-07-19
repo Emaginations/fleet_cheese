@@ -93,7 +93,10 @@ class _ApiSettingsCardState extends State<ApiSettingsCard> {
           ],
           onChanged: (v) {
             if (v != null) {
-              setState(() => AppSettings.providerId = v);
+              setState(() {
+                AppSettings.providerId = v;
+                _keyCtrl.text = AppSettings.apiKey; // 切换时加载该提供商的Key
+              });
               AppSettings.save();
             }
           },
