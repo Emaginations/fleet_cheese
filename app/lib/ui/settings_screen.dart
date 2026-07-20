@@ -251,7 +251,7 @@ class _GamePrefsCardState extends State<GamePrefsCard> {
           setState(() => AppSettings.deathMatch = v);
           AppSettings.save();
         }),
-        _switchRow('选中棋子时显示规则说明', AppSettings.showRules, (v) {
+        _switchRow('显示规则', AppSettings.showRules, (v) {
           setState(() => AppSettings.showRules = v);
           AppSettings.save();
         }),
@@ -294,7 +294,9 @@ class SettingsScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          _card('API 设置', const ApiSettingsCard()),
+          _card('AI-1 设置', const ApiSettingsCard()),
+          const SizedBox(height: 16),
+          _card('AI-2 设置（观AI战专用）', const Api2SettingsCard()),
           const SizedBox(height: 16),
           _card('对局偏好', const GamePrefsCard()),
           const SizedBox(height: 16),
@@ -322,6 +324,77 @@ class SettingsScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+/// AI-2 设置卡片（观AI战专用）
+class Api2SettingsCard extends StatefulWidget {
+  const Api2SettingsCard({super.key});
+
+  @override
+  State<Api2SettingsCard> createState() => _Api2SettingsCardState();
+}
+
+class _Api2SettingsCardState extends State<Api2SettingsCard> {
+  late final TextEditingController _keyCtrl;
+  late final TextEditingController _modelCtrl;
+  bool _keyVisible = false;
+  bool _testing = false;
+  String? _testResult;
+  bool _testOk = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _keyCtrl = TextEditingController(text: AppSettings.ai2ApiKey);
+    _modelCtrl = TextEditingController(text: AppSettings.ai2Model);
+  }
+
+  @override
+  void dispose() {
+    _keyCtrl.dispose();
+    _modelCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _test() async {
+    AppSettings.ai2ApiKey = _keyCtrl.text.trim();
+    AppSettings.ai2Model = _modelCtrl.text.trim();
+    await AppSettings.save();
+    setState(() { _testing = true; _testResult = null; });
+    final (ok, msg) = await AppSettings.testConnection(url: AppSettings.ai2BaseUrl, key: AppSettings.ai2ApiKey, mdl: AppSettings.ai2Model);
+    if (!mounted) return;
+    setState(() { _testing = false; _testOk = ok; _testResult = msg; });
+  }
+
+  InputDecoration _dec(String label) => InputDecoration(labelText: label, labelStyle: const TextStyle(fontSize: 13), contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10), border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)), isDense: true);
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      DropdownButtonFormField<String>(
+        initialValue: AppSettings.ai2ProviderId,
+        decoration: _dec('API 服务商'),
+        items: [
+          for (final p in kApiProviders)
+            DropdownMenuItem(value: p.id, child: Row(children: [
+              CircleAvatar(radius: 10, backgroundColor: Color(p.brandColor), child: Text(p.brandLetter, style: const TextStyle(fontSize: 11, color: Colors.white, fontWeight: FontWeight.bold))),
+              const SizedBox(width: 8),
+              Flexible(child: Text(p.name, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis)),
+            ])),
+        ],
+        onChanged: (v) {
+          if (v != null) { setState(() { AppSettings.ai2ProviderId = v; _keyCtrl.text = AppSettings.ai2ApiKey; }); AppSettings.save(); }
+        },
+      ),
+      Padding(padding: const EdgeInsets.only(left: 4, bottom: 8), child: Text(AppSettings.ai2BaseUrl, style: TextStyle(fontSize: 11, color: Colors.grey.shade600))),
+      TextField(controller: _keyCtrl, obscureText: !_keyVisible, style: const TextStyle(fontSize: 13), decoration: _dec('API Key').copyWith(suffixIcon: IconButton(icon: Icon(_keyVisible ? Icons.visibility_off : Icons.visibility, size: 18), onPressed: () => setState(() => _keyVisible = !_keyVisible))), onChanged: (v) { AppSettings.ai2ApiKey = v.trim(); AppSettings.save(); }),
+      const SizedBox(height: 12),
+      TextField(controller: _modelCtrl, style: const TextStyle(fontSize: 13), decoration: _dec('模型名称'), onChanged: (v) { AppSettings.ai2Model = v.trim(); AppSettings.save(); }),
+      const SizedBox(height: 12),
+      FilledButton.icon(onPressed: _testing ? null : _test, icon: _testing ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)) : const Icon(Icons.wifi_tethering, size: 18), label: Text(_testing ? '测试中...' : '连通性快速测试')),
+      if (_testResult != null) Container(margin: const EdgeInsets.only(top: 10), padding: const EdgeInsets.all(10), decoration: BoxDecoration(color: _testOk ? const Color(0xFFE3F5E5) : const Color(0xFFFDE7E7), borderRadius: BorderRadius.circular(8)), child: Text(_testResult!, style: TextStyle(fontSize: 12, color: _testOk ? const Color(0xFF1B7C2C) : const Color(0xFFB3261E)), maxLines: 4, overflow: TextOverflow.ellipsis)),
+    ]);
   }
 }
 

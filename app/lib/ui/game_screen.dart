@@ -40,6 +40,7 @@ class _GameScreenState extends State<GameScreen> {
   bool _stopped = false;
   String? _lastAIDebugContent;
   SelectionInfo? _selectionInfo;
+  double? _lastAIElapsed; // 最近一次AI调用耗时秒数
 
   @override
   void initState() {
@@ -61,19 +62,12 @@ class _GameScreenState extends State<GameScreen> {
     super.dispose();
   }
 
-  void _onSettingsChanged() {
-    if (mounted) setState(() {});
-  }
+  void _onSettingsChanged() { if (mounted) setState(() {}); }
 
   Future<void> _startNewGame({bool forceNew = false}) async {
-    _stopped = false;
-    _aiThinking = false;
-    _lastAIDebugContent = null;
-    _selectionInfo = null;
-    _aiRed = null;
-    _aiBlue = null;
+    _stopped = false; _aiThinking = false; _lastAIDebugContent = null;
+    _selectionInfo = null; _aiRed = null; _aiBlue = null; _lastAIElapsed = null;
 
-    // 尝试恢复未完成对局
     bool restored = false;
     if (!forceNew) {
       final saved = await SaveGame.load(widget.mode.name);
@@ -86,9 +80,7 @@ class _GameScreenState extends State<GameScreen> {
         _state.addLog('已恢复未完成的对局（第${_state.round}回合）', side: _state.current);
         restored = true;
       }
-    } else {
-      await SaveGame.clear(widget.mode.name);
-    }
+    } else { await SaveGame.clear(widget.mode.name); }
 
     if (!restored) {
       final chosen = AppSettings.firstMover;
@@ -102,14 +94,10 @@ class _GameScreenState extends State<GameScreen> {
     if (widget.mode == GameMode.vsAI) {
       final aiSide = AppSettings.mySide.opponent;
       final ai = AIClient(side: aiSide);
-      if (aiSide == Side.red) {
-        _aiRed = ai;
-      } else {
-        _aiBlue = ai;
-      }
+      if (aiSide == Side.red) { _aiRed = ai; } else { _aiBlue = ai; }
     } else if (widget.mode == GameMode.aiVsAi) {
       _aiRed = AIClient(side: Side.red);
-      _aiBlue = AIClient(side: Side.blue);
+      _aiBlue = AIClient.forAI2(side: Side.blue);
       final myPath = await _recorder.filePath;
       final prev = await GameRecorder.latestQpContent(excludePath: myPath);
       _aiRed!.previousGameQp = prev;
@@ -120,6 +108,7 @@ class _GameScreenState extends State<GameScreen> {
     _maybeTriggerAI();
   }
 
+  // --- AI 逻辑 ---
   bool get _isHumanTurn {
     if (_state.winner != null || _aiThinking) return false;
     return switch (widget.mode) {
@@ -132,8 +121,7 @@ class _GameScreenState extends State<GameScreen> {
   Side? get _activeSide {
     if (_state.winner != null || _aiThinking) return null;
     return switch (widget.mode) {
-      GameMode.vsAI =>
-        _state.current == AppSettings.mySide ? AppSettings.mySide : null,
+      GameMode.vsAI => _state.current == AppSettings.mySide ? AppSettings.mySide : null,
       GameMode.sandbox || GameMode.faceToFace => _state.current,
       GameMode.aiVsAi => null,
     };
@@ -146,53 +134,40 @@ class _GameScreenState extends State<GameScreen> {
     _runAITurn(ai);
   }
 
-  // --- AI 逻辑（与之前一致）---
   Future<void> _runAITurn(AIClient ai) async {
     setState(() => _aiThinking = true);
+    _lastAIElapsed = null;
+
     String? errorFeedback;
     for (int attempt = 0; attempt < 3; attempt++) {
       if (_stopped) return;
       try {
-        final qpContent = _recorder.content;
-        // 附加对方待结算轰炸位置
         final opponentBombards = _state.awaitingResolve[ai.side.opponent]!;
         String extraHint = '';
         if (opponentBombards.isNotEmpty) {
-          extraHint = '\n\n【对方已锁定的轰炸（红色四角框），将在本回合结束时结算】\n';
-          for (final b in opponentBombards) {
-            extraHint += '${b.side.label}方轰炸${b.target.qp}\n';
-          }
+          extraHint = '\n【对方已锁定的轰炸（红色四角框），将在本回合结束时结算】\n';
+          for (final b in opponentBombards) { extraHint += '${b.side.label}方轰${b.target.qp}\n'; }
         }
 
         final decision = await ai.requestDecision(
-          board: _state.board,
-          state: _state,
-          qpContent: qpContent + extraHint,
+          board: _state.board, state: _state,
+          qpContent: _recorder.content + extraHint,
           canUndo: !AppSettings.deathMatch && _state.undoLeft[ai.side]! > 0,
           undoLeft: _state.undoLeft[ai.side]!,
           errorFeedback: errorFeedback,
         );
         if (_stopped) return;
         _lastAIDebugContent = AppSettings.aiDebug ? decision.rawContent : null;
+        _lastAIElapsed = decision.elapsedSec;
 
         if (decision.undoSteps != null && decision.actions.isEmpty) {
-          final r = _controller.tryUndo(ai.side, decision.undoSteps!,
-              quotaCost: decision.undoSteps!);
-          if (r.ok) {
-            setState(() => _aiThinking = false);
-            _maybeTriggerAI();
-            return;
-          }
-          errorFeedback = r.error;
-          continue;
+          final r = _controller.tryUndo(ai.side, decision.undoSteps!, quotaCost: decision.undoSteps!);
+          if (r.ok) { setState(() => _aiThinking = false); _maybeTriggerAI(); return; }
+          errorFeedback = r.error; continue;
         }
 
         final err = _applyAIActions(ai.side, decision.actions);
-        if (err == null) {
-          setState(() => _aiThinking = false);
-          _afterPlyAdvanced();
-          return;
-        }
+        if (err == null) { setState(() => _aiThinking = false); _afterPlyAdvanced(); return; }
         errorFeedback = err;
       } catch (e) {
         errorFeedback = '请求或解析失败：$e';
@@ -209,15 +184,11 @@ class _GameScreenState extends State<GameScreen> {
   String? _applyAIActions(Side aiSide, List<QpAction> actions) {
     if (actions.isEmpty) return '未解析到任何动作指令';
     final moveActions = actions.where((a) => !a.isBombard).toList();
-    if (moveActions.length != 1) return '每回合必须恰好1个移动指令';
-
+    if (moveActions.length != 1) return '每回合须恰好1个移动指令';
     _controller.ensureSnapshotForAction();
     for (final a in actions.where((a) => a.isBombard)) {
       final cruiser = _state.board.at(a.from);
-      if (cruiser == null || cruiser.type != PieceType.cruiser) {
-        _rollbackCurrentPly();
-        return '轰炸指令位置不是巡洋舰';
-      }
+      if (cruiser == null || cruiser.type != PieceType.cruiser) { _rollbackCurrentPly(); return '轰炸位置不是巡洋舰'; }
       final r = _controller.tryBombard(cruiser.id, a.to);
       if (!r.ok) { _rollbackCurrentPly(); return r.error; }
     }
@@ -228,18 +199,13 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   void _rollbackCurrentPly() {
-    if (_state.snapshots.isNotEmpty) {
-      final snap = _state.snapshots.removeLast();
-      _state.board = snap.board.clone();
-      _state.current = snap.current;
-      _state.ply = snap.ply;
-      _state.awaitingResolve[Side.red] =
-          List.of(snap.awaitingResolve[Side.red]!);
-      _state.awaitingResolve[Side.blue] =
-          List.of(snap.awaitingResolve[Side.blue]!);
-      _state.currentPlyActions.clear();
-      _controller.resetSnapshotFlag();
-    }
+    if (_state.snapshots.isEmpty) return;
+    final snap = _state.snapshots.removeLast();
+    _state.board = snap.board.clone(); _state.current = snap.current; _state.ply = snap.ply;
+    _state.awaitingResolve[Side.red] = List.of(snap.awaitingResolve[Side.red]!);
+    _state.awaitingResolve[Side.blue] = List.of(snap.awaitingResolve[Side.blue]!);
+    _state.currentPlyActions.clear();
+    _controller.resetSnapshotFlag();
   }
 
   void _fallbackAIMove(Side aiSide) {
@@ -250,14 +216,10 @@ class _GameScreenState extends State<GameScreen> {
       final moves = rules.validMoves(p);
       if (moves.isEmpty) continue;
       moves.shuffle(_state.rng);
-      moves.sort((a, b) {
-        final va = _state.board.at(a) != null ? 1 : 0;
-        final vb = _state.board.at(b) != null ? 1 : 0;
-        return vb.compareTo(va);
-      });
+      moves.sort((a,b) => ((_state.board.at(b)!=null)?1:0).compareTo((_state.board.at(a)!=null)?1:0));
       _controller.ensureSnapshotForAction();
       _controller.tryMove(p.pos, moves.first);
-      _state.addLog('AI降级：随机走子', side: aiSide);
+      _state.addLog('AI降级随机走子', side: aiSide);
       return;
     }
   }
@@ -267,16 +229,10 @@ class _GameScreenState extends State<GameScreen> {
     setState(() {});
     if (_state.winner == null && !_stopped) {
       if (widget.mode == GameMode.aiVsAi) {
-        Future.delayed(const Duration(seconds: 2), () {
-          if (!_stopped && mounted) _maybeTriggerAI();
-        });
-      } else {
-        _maybeTriggerAI();
-      }
+        Future.delayed(const Duration(seconds: 2), () { if (!_stopped && mounted) _maybeTriggerAI(); });
+      } else { _maybeTriggerAI(); }
     }
   }
-
-  // --- 人类操作 ---
 
   void _handleMove(Move m) {
     if (!_isHumanTurn) return;
@@ -295,242 +251,150 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   void _handleUndo() {
-    if (AppSettings.deathMatch) { _toast('生死斗模式不可悔棋'); return; }
+    if (AppSettings.deathMatch) { _toast('生死斗不可悔棋'); return; }
     final undoBy = widget.mode == GameMode.vsAI ? AppSettings.mySide : _state.current;
     final halfSteps = widget.mode == GameMode.vsAI ? 2 : 1;
-    if (_aiThinking) { _toast('AI思考中不能悔棋'); return; }
+    if (_aiThinking) { _toast('AI思考中'); return; }
     final r = _controller.tryUndo(undoBy, halfSteps, quotaCost: 1);
     if (!r.ok) { _toast(r.error!); return; }
-    setState(() {});
-    _maybeTriggerAI();
+    setState(() {}); _maybeTriggerAI();
   }
 
   void _toast(String msg) {
-    ScaffoldMessenger.of(context)
-      ..clearSnackBars()
-      ..showSnackBar(SnackBar(
-        content: Text(msg),
-        duration: const Duration(seconds: 2),
-        backgroundColor: Colors.red.shade900,
-      ));
+    ScaffoldMessenger.of(context)..clearSnackBars()..showSnackBar(SnackBar(content: Text(msg), duration: const Duration(seconds: 2), backgroundColor: Colors.red.shade900));
   }
 
   // --- UI ---
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFF92CDDB),
       appBar: AppBar(
-        title: Text('舰队象棋 · ${widget.mode.label}',
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-        backgroundColor: const Color(0xFF92CDDB),
-        foregroundColor: Colors.black87,
-        elevation: 0,
+        title: Text('舰队象棋 · ${widget.mode.label}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+        backgroundColor: const Color(0xFF92CDDB), foregroundColor: Colors.black87, elevation: 0,
         actions: [
           if (!AppSettings.deathMatch && widget.mode != GameMode.aiVsAi)
             IconButton(icon: const Icon(Icons.undo), tooltip: '悔棋', onPressed: _handleUndo),
-          IconButton(
-              icon: const Icon(Icons.replay),
-              tooltip: '快速重开',
-              onPressed: () { _stopped = true; _startNewGame(forceNew: true); }),
+          IconButton(icon: const Icon(Icons.replay), tooltip: '快速重开', onPressed: () { _stopped = true; _startNewGame(forceNew: true); }),
           if (AppSettings.aiDebug && _lastAIDebugContent != null)
             IconButton(icon: const Icon(Icons.bug_report), tooltip: 'AI完整推演', onPressed: _showDebugDialog),
         ],
       ),
-      body: Column(
-        children: [
-          _buildInfoBar(),
-          Expanded(
-            child: Center(
-              child: Padding(
-                padding: const EdgeInsets.all(2),
-                child: BoardWidget(
-                  board: _state.board,
-                  state: _state,
-                  activeSide: _activeSide,
-                  rotateBlue: widget.mode == GameMode.faceToFace,
-                  onMove: _handleMove,
-                  onBombard: _handleBombard,
-                  onSelectionChanged: (sel) => setState(() => _selectionInfo = sel),
-                ),
-              ),
-            ),
-          ),
-          // 规则说明区：始终占位58px，防止棋盘变形
-          _buildRuleHint(),
-          if (AppSettings.aiDebug) _buildDebugArea(),
-          _buildLogPanel(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRuleHint() {
-    return SizedBox(
-      width: double.infinity,
-      height: 58,
-      child: _selectionInfo != null && AppSettings.showRules
-          ? Container(
-              color: Colors.white.withAlpha(240),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-              child: _ruleContent(_selectionInfo!),
-            )
-          : Container(
-              color: Colors.white.withAlpha(120),
-              alignment: Alignment.center,
-              child: const Text('点击棋子查看规则说明',
-                  style: TextStyle(fontSize: 11, color: Colors.black38)),
-            ),
-    );
-  }
-
-  Widget _ruleContent(SelectionInfo s) {
-    final textColor = s.piece.side == Side.red ? kRedPieceText : kBluePieceText;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(children: [
-          Text(s.piece.type.fullName,
-              style: TextStyle(fontWeight: FontWeight.bold, color: textColor, fontSize: 12.5)),
-          if (s.bombardMode)
-            const Text(' · 攻击模式（再点自身切回）',
-                style: TextStyle(color: Color(0xFFE05500), fontWeight: FontWeight.w600, fontSize: 11.5)),
-        ]),
-        Expanded(
-          child: SingleChildScrollView(
-            child: Text(pieceRuleText(s.piece.type),
-                style: const TextStyle(fontSize: 11, color: Colors.black87)),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildDebugArea() {
-    return InkWell(
-      onTap: _lastAIDebugContent != null ? _showDebugDialog : null,
-      child: Container(
-        width: double.infinity,
-        height: 84,
-        color: const Color(0xFF0D1B2E),
-        padding: const EdgeInsets.all(8),
-        child: SingleChildScrollView(
-          child: SelectableText(
-            _lastAIDebugContent ?? '（Debug模式已开启，等待AI首次返回…）',
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 11, color: Color(0xFF90CAF9)),
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showDebugDialog() {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: const Color(0xFF0D1B2E),
-        title: const Text('AI完整推演', style: TextStyle(color: Color(0xFF90CAF9))),
-        content: SizedBox(width: 520, height: 560,
-          child: SingleChildScrollView(
-            child: SelectableText(_lastAIDebugContent ?? '',
-                style: const TextStyle(color: Colors.white70, fontSize: 12, fontFamily: 'monospace')),
-          ),
-        ),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('关闭'))],
-      ),
-    );
-  }
-
-  Widget _buildInfoBar() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      color: Colors.white.withAlpha(185),
-      child: Row(children: [
-        _pills(Side.red),
-        const SizedBox(width: 8),
-        _pills(Side.blue),
-        const Spacer(),
-        if (_state.winner != null)
-          Text('${_state.winner!.fullLabel}胜！',
-              style: const TextStyle(color: Color(0xFFD32F2F), fontWeight: FontWeight.bold)),
-        if (_state.winner == null) ...[
-          Text('第${_state.round}回合', style: const TextStyle(fontSize: 12)),
-          const SizedBox(width: 8),
-          if (_aiThinking)
-            const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
-        ],
-        const SizedBox(width: 8),
-        if (!AppSettings.deathMatch)
-          Text('悔:红${_state.undoLeft[Side.red]} 蓝${_state.undoLeft[Side.blue]}',
-              style: const TextStyle(fontSize: 11, color: Colors.black54)),
-        // 待结算轰炸计数
-        const SizedBox(width: 4),
-        Text(
-          '轰:红${_state.awaitingResolve[Side.red]!.length} 蓝${_state.awaitingResolve[Side.blue]!.length}',
-          style: const TextStyle(fontSize: 10.5, color: Color(0xFFB71C1C)),
-        ),
+      body: Column(children: [
+        _buildInfoBar(),
+        Expanded(child: Center(child: Padding(padding: const EdgeInsets.all(2), child: BoardWidget(
+          board: _state.board, state: _state, activeSide: _activeSide,
+          rotateBlue: widget.mode == GameMode.faceToFace,
+          onMove: _handleMove, onBombard: _handleBombard,
+          onSelectionChanged: (sel) => setState(() => _selectionInfo = sel),
+        )))),
+        // 共享面板：选中棋子时显示规则，否则显示棋谱日志
+        _buildBottomPanel(),
+        if (AppSettings.aiDebug && _lastAIDebugContent != null) _buildDebugMini(),
       ]),
     );
   }
 
-  Widget _pills(Side side) {
-    final isActive = _state.current == side && _state.winner == null;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-      decoration: BoxDecoration(
-        color: isActive ? (side == Side.red ? const Color(0xFFE63946) : const Color(0xFF2F76C6)) : Colors.transparent,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: isActive ? Colors.white : Colors.grey, width: isActive ? 1.8 : 0.5),
-      ),
-      child: Text(side.label, style: TextStyle(color: isActive ? Colors.white : Colors.black54, fontSize: 13)),
-    );
+  /// 底部共享面板：显示规则（选中棋子时）或日志
+  Widget _buildBottomPanel() {
+    if (_selectionInfo != null && AppSettings.showRules) {
+      return _buildRulePanel(_selectionInfo!);
+    }
+    return _buildLogPanel();
   }
 
-  void _showLogDialog() {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: Colors.white,
-        title: const Text('棋谱与对局记录', style: TextStyle(fontSize: 16)),
-        content: SizedBox(width: 520, height: 560,
-          child: SingleChildScrollView(
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              const Text('— 棋谱 —', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-              const SizedBox(height: 4),
-              SelectableText(_recorder.content, style: const TextStyle(fontSize: 12, height: 1.5)),
-              const Divider(height: 20),
-              const Text('— 日志 —', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-              const SizedBox(height: 4),
-              for (final e in _state.log)
-                Text('[${e.round}] ${e.side.label}·${e.text}',
-                    style: TextStyle(color: e.side == Side.red ? const Color(0xFFC62828) : const Color(0xFF1565C0),
-                        fontSize: 11.5, height: 1.4)),
-            ]),
-          ),
-        ),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('关闭'))],
-      ),
-    );
-  }
-
-  Widget _buildLogPanel() {
-    final recent = _state.log.reversed.take(4).toList();
+  Widget _buildRulePanel(SelectionInfo s) {
+    final textColor = s.piece.side == Side.red ? kRedPieceText : kBluePieceText;
     return InkWell(
       onTap: _showLogDialog,
       child: Container(
         width: double.infinity, height: 54,
-        color: Colors.white.withAlpha(205),
+        color: Colors.white.withAlpha(240),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          for (final e in recent)
-            Text('[${e.round}] ${e.side.label}·${e.text}',
-                style: TextStyle(
-                    color: e.side == Side.red ? const Color(0xFFC62828) : const Color(0xFF1565C0),
-                    fontSize: 10.5),
-                maxLines: 1, overflow: TextOverflow.ellipsis),
+          Row(children: [
+            Text(s.piece.type.fullName, style: TextStyle(fontWeight: FontWeight.bold, color: textColor, fontSize: 12)),
+            const SizedBox(width: 8),
+            if (s.bombardMode) const Text('·攻击模式', style: TextStyle(color: Color(0xFFE05500), fontSize: 11)),
+            const Spacer(),
+            const Text('点击查看完整棋谱 ▸', style: TextStyle(fontSize: 10, color: Colors.black38)),
+          ]),
+          Expanded(child: SingleChildScrollView(child: Text(pieceRuleText(s.piece.type), style: const TextStyle(fontSize: 10.5, color: Colors.black87)))),
         ]),
       ),
+    );
+  }
+
+  void _showLogDialog() {
+    showDialog(context: context, builder: (_) => AlertDialog(
+      backgroundColor: Colors.white, title: const Text('棋谱与对局记录'),
+      content: SizedBox(width: 520, height: 560, child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('— 棋谱 —', style: TextStyle(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 4),
+        SelectableText(_recorder.content, style: const TextStyle(fontSize: 12, height: 1.5)),
+        const Divider(height: 20),
+        const Text('— 日志 —', style: TextStyle(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 4),
+        for (final e in _state.log) Text('[${e.round}] ${e.side.label}·${e.text}', style: TextStyle(color: e.side==Side.red?const Color(0xFFC62828):const Color(0xFF1565C0), fontSize: 11.5)),
+      ]))),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('关闭'))],
+    ));
+  }
+
+  void _showDebugDialog() {
+    showDialog(context: context, builder: (_) => AlertDialog(
+      backgroundColor: const Color(0xFF0D1B2E), title: const Text('AI完整推演', style: TextStyle(color: Color(0xFF90CAF9))),
+      content: SizedBox(width: 520, height: 560, child: SingleChildScrollView(child: SelectableText(_lastAIDebugContent ?? '', style: const TextStyle(color: Colors.white70, fontSize: 12, fontFamily: 'monospace')))),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('关闭'))],
+    ));
+  }
+
+  Widget _buildDebugMini() {
+    return InkWell(
+      onTap: _showDebugDialog,
+      child: Container(width: double.infinity, height: 50, color: const Color(0xFF0D1B2E), padding: const EdgeInsets.all(6),
+        child: SingleChildScrollView(child: SelectableText(_lastAIDebugContent ?? '', style: const TextStyle(fontFamily: 'monospace', fontSize: 10, color: Color(0xFF90CAF9))))),
+    );
+  }
+
+  Widget _buildInfoBar() {
+    return Container(padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 3), color: Colors.white.withAlpha(185), child: Row(children: [
+      _pills(Side.red), const SizedBox(width: 8), _pills(Side.blue), const Spacer(),
+      if (_state.winner != null) Text('${_state.winner!.fullLabel}胜！', style: const TextStyle(color: Color(0xFFD32F2F), fontWeight: FontWeight.bold)),
+      if (_state.winner == null) ...[
+        Text('第${_state.round}回合', style: const TextStyle(fontSize: 11)),
+        const SizedBox(width: 6),
+        if (_aiThinking) const SizedBox(width: 12, height: 12, child: CircularProgressIndicator(strokeWidth: 2)),
+      ],
+      const SizedBox(width: 6),
+      if (!AppSettings.deathMatch) Text('悔:红${_state.undoLeft[Side.red]} 蓝${_state.undoLeft[Side.blue]}', style: const TextStyle(fontSize: 10, color: Colors.black54)),
+      const SizedBox(width: 4),
+      Text('轰:红${_state.awaitingResolve[Side.red]!.length} 蓝${_state.awaitingResolve[Side.blue]!.length}', style: const TextStyle(fontSize: 10, color: Color(0xFFB71C1C))),
+      if (_lastAIElapsed != null) ...[
+        const SizedBox(width: 6),
+        Text('${_lastAIElapsed!.toStringAsFixed(1)}s', style: const TextStyle(fontSize: 10, color: Color(0xFF2F76C6), fontWeight: FontWeight.bold)),
+      ],
+    ]));
+  }
+
+  Widget _pills(Side side) {
+    final isActive = _state.current == side && _state.winner == null;
+    return Container(padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2), decoration: BoxDecoration(
+      color: isActive ? (side==Side.red?const Color(0xFFE63946):const Color(0xFF2F76C6)) : Colors.transparent,
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(color: isActive?Colors.white:Colors.grey, width: isActive?1.8:0.5),
+    ), child: Text(side.label, style: TextStyle(color: isActive?Colors.white:Colors.black54, fontSize: 12)));
+  }
+
+  Widget _buildLogPanel() {
+    final recent = _state.log.reversed.take(3).toList();
+    return InkWell(
+      onTap: _showLogDialog,
+      child: Container(width: double.infinity, height: 54, color: Colors.white.withAlpha(205), padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          for (final e in recent)
+            Text('[${e.round}] ${e.side.label}·${e.text}', style: TextStyle(color: e.side==Side.red?const Color(0xFFC62828):const Color(0xFF1565C0), fontSize: 10), maxLines: 1, overflow: TextOverflow.ellipsis),
+        ])),
     );
   }
 }

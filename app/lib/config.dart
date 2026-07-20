@@ -17,7 +17,6 @@ class ApiProvider {
 }
 
 const List<ApiProvider> kApiProviders = [
-  ApiProvider('587', '587 (免费试用)', 'https://api.587.lol/v1', '5', 0xFF7C3AED),
   ApiProvider('deepseek', 'DeepSeek', 'https://api.deepseek.com/v1', 'D', 0xFF4D6BFE),
   ApiProvider('doubao', '豆包(火山方舟)', 'https://ark.cn-beijing.volces.com/api/v3', '豆', 0xFF00C8B4),
   ApiProvider('google', '谷歌 Gemini', 'https://generativelanguage.googleapis.com/v1beta/openai', 'G', 0xFF4285F4),
@@ -63,6 +62,15 @@ class AppSettings {
   static int revision = 0;
   static final ValueNotifier<int> notifier = ValueNotifier(0);
 
+  /// AI2：观AI战第二个AI独立配置
+  static String ai2ProviderId = 'deepseek';
+  static String ai2Model = 'deepseek-v4-flash';
+  static final Map<String, String> ai2ApiKeys = {};
+  static String get ai2ApiKey => ai2ApiKeys[ai2ProviderId] ?? '';
+  static set ai2ApiKey(String v) => ai2ApiKeys[ai2ProviderId] = v;
+  static String get ai2BaseUrl => providerById(ai2ProviderId).baseUrl;
+  static bool get ai2HasKey => ai2ApiKey.isNotEmpty;
+
   static String get baseUrl => providerById(providerId).baseUrl;
   static bool get hasKey => apiKey.isNotEmpty;
 
@@ -71,7 +79,7 @@ class AppSettings {
       _prefs = await SharedPreferences.getInstance();
       final p = _prefs!;
       providerId = p.getString('providerId') ?? 'deepseek';
-      // 迁移单 Key → 多 Key；优先读取各提供商独立 Key，兼容旧版 apiKey
+      // 迁移单 Key → 多 Key
       final keysJson = p.getString('apiKeys');
       if (keysJson != null) {
         final decoded = jsonDecode(keysJson) as Map<String, dynamic>;
@@ -80,10 +88,19 @@ class AppSettings {
       }
       final oldKey = p.getString('apiKey') ?? '';
       if (oldKey.isNotEmpty && !apiKeys.containsKey(providerId)) {
-        apiKeys[providerId] = oldKey; // 迁移旧 Key 到当前提供商
+        apiKeys[providerId] = oldKey;
         await p.remove('apiKey');
       }
       model = p.getString('model') ?? 'deepseek-v4-flash';
+      // AI2 配置
+      ai2ProviderId = p.getString('ai2ProviderId') ?? 'deepseek';
+      ai2Model = p.getString('ai2Model') ?? 'deepseek-v4-flash';
+      final ai2KeysJson = p.getString('ai2ApiKeys');
+      if (ai2KeysJson != null) {
+        final decoded = jsonDecode(ai2KeysJson) as Map<String, dynamic>;
+        ai2ApiKeys.clear();
+        for (final e in decoded.entries) { ai2ApiKeys[e.key] = e.value.toString(); }
+      }
       mySide = (p.getString('mySide') ?? 'red') == 'blue' ? Side.blue : Side.red;
       final fm = p.getString('firstMover') ?? 'random';
       firstMover = fm == 'red' ? Side.red : (fm == 'blue' ? Side.blue : null);
@@ -105,6 +122,9 @@ class AppSettings {
       await p.setString('providerId', providerId);
       await p.setString('apiKeys', jsonEncode(apiKeys));
       await p.setString('model', model);
+      await p.setString('ai2ProviderId', ai2ProviderId);
+      await p.setString('ai2ApiKeys', jsonEncode(ai2ApiKeys));
+      await p.setString('ai2Model', ai2Model);
       await p.setString('mySide', mySide == Side.blue ? 'blue' : 'red');
       await p.setString('firstMover',
           firstMover == null ? 'random' : (firstMover == Side.red ? 'red' : 'blue'));
@@ -116,19 +136,22 @@ class AppSettings {
     } catch (_) {}
   }
 
-  /// 连通性快速测试：返回 (成功, 信息)
-  static Future<(bool, String)> testConnection() async {
-    if (apiKey.isEmpty) return (false, '请先填写 API Key');
+  /// 连通性快速测试（默认AI1，可指定参数测试AI2或自定义）
+  static Future<(bool, String)> testConnection({String? url, String? key, String? mdl}) async {
+    final u = url ?? baseUrl;
+    final k = key ?? apiKey;
+    final m = mdl ?? model;
+    if (k.isEmpty) return (false, '请先填写 API Key');
     try {
       final resp = await http
           .post(
-            Uri.parse('$baseUrl/chat/completions'),
+            Uri.parse('$u/chat/completions'),
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': 'Bearer $apiKey',
+              'Authorization': 'Bearer $k',
             },
             body: jsonEncode({
-              'model': model,
+              'model': m,
               'messages': [
                 {'role': 'user', 'content': '回复"OK"即可'}
               ],

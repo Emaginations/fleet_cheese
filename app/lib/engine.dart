@@ -139,8 +139,7 @@ class RulesEngine {
   }
 
   List<Pos> _bombardTargetsOnLine(Pos origin, Pos dir, Side side) {
-    // 必须恰好越过1颗棋子（任意阵营）作为炮架，炮架自身不可打，
-    // 炮架后方所有空格（至下一颗棋子前）为有效目标
+    // 第一颗棋子为炮架（不可打），炮架后方所有点（空格+第二颗棋子）为有效目标
     final targets = <Pos>[];
     bool foundScreen = false;
     Pos cur = origin + dir;
@@ -148,14 +147,15 @@ class RulesEngine {
       final pc = board.at(cur);
       if (pc != null) {
         if (!foundScreen) {
-          foundScreen = true; // 第一颗棋子 = 炮架，跳过
+          foundScreen = true; // 第一颗棋子 = 炮架，自身跳过
           cur = cur + dir;
           continue;
         } else {
-          break; // 第二颗棋子 = 阻挡，不可再打
+          targets.add(cur); // 第二颗棋子含在目标内
+          break;
         }
       }
-      if (foundScreen) targets.add(cur);
+      if (foundScreen) targets.add(cur); // 炮架后方空格
       cur = cur + dir;
     }
     return targets;

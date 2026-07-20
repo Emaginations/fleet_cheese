@@ -116,16 +116,21 @@ void main() {
     test('轰炸延迟结算：敌回合结束时生效（走入雷区）', () {
       final c = makeGame();
       final s = c.state;
-      // 红巡(6,2)沿y+：炮架(6,5)红驱，后方可打(6,6)(6,7)；(6,8)蓝驱为第二颗阻挡不可再打
+      // 红巡(6,2)沿y+：炮架(6,5)红驱，后方可打(6,6)(6,7)(6,8)；第二颗棋子(6,8)含在内
       c.ensureSnapshotForAction();
       final cruiser = s.board.at(const Pos(6, 2))!;
       // (6,5)为炮架自身不可打
       expect(c.tryBombard(cruiser.id, const Pos(6, 5)).ok, false,
           reason: '炮架自身不可打');
-      // (6,8)为第二颗棋子之后不可打
-      expect(c.tryBombard(cruiser.id, const Pos(6, 8)).ok, false,
+      // (6,8)为第二颗棋子含在目标内
+      expect(c.tryBombard(cruiser.id, const Pos(6, 8)).ok, true,
+          reason: '第二颗棋子应含在目标内（第一子后空格→含第二子）');
+      // (6,9)在第二颗棋子之后不可打
+      expect(c.tryBombard(cruiser.id, const Pos(6, 9)).ok, false,
           reason: '第二颗棋子之后不可打');
-      // (6,7)有效
+      // 撤消(6,8)，改打(6,7)继续雷区测试
+      s.awaitingResolve[Side.red]!.clear();
+      s.board.byId(cruiser.id)!.firedThisTurn = false;
       final rb = c.tryBombard(cruiser.id, const Pos(6, 7));
       expect(rb.ok, true, reason: rb.error ?? '');
       // 红方移动结束回合
