@@ -66,7 +66,7 @@ class _GameScreenState extends State<GameScreen> {
   void _onSettingsChanged() { if (mounted) setState(() {}); }
 
   Future<void> _startNewGame({bool forceNew = false}) async {
-    _stopped = false; _aiThinking = false; _lastAIDebugContent = null;
+    _stopped = false; _aiThinking = false; _resultShown = false; _lastAIDebugContent = null;
     _selectionInfo = null; _aiRed = null; _aiBlue = null; _lastAIElapsed = null;
 
     bool restored = false;
@@ -228,6 +228,7 @@ class _GameScreenState extends State<GameScreen> {
   void _afterPlyAdvanced() {
     if (!mounted) return;
     setState(() {});
+    _showResultIfGameOver();
     if (_state.winner == null && !_stopped) {
       if (widget.mode == GameMode.aiVsAi) {
         Future.delayed(const Duration(seconds: 2), () { if (!_stopped && mounted) _maybeTriggerAI(); });
@@ -259,6 +260,43 @@ class _GameScreenState extends State<GameScreen> {
     final r = _controller.tryUndo(undoBy, halfSteps, quotaCost: 1);
     if (!r.ok) { _toast(r.error!); return; }
     setState(() {}); _maybeTriggerAI();
+  }
+
+  bool _resultShown = false;
+
+  void _showResultIfGameOver() {
+    if (_state.winner == null || _resultShown) return;
+    _resultShown = true;
+
+    final isMySide = widget.mode != GameMode.vsAI || _state.winner == AppSettings.mySide;
+    final isAI = widget.mode == GameMode.aiVsAi;
+    final title = isAI
+        ? '${_state.winner!.fullLabel}获胜'
+        : (isMySide ? '胜利！' : '失败');
+    final msg = '${_state.winner!.fullLabel} ${_state.winReason ?? _state.winner!.label + "方旗舰被击毁"}';
+
+    Future.delayed(const Duration(milliseconds: 600), () {
+      if (!mounted) return;
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: Text(title, style: TextStyle(color: isMySide ? const Color(0xFF2E7D32) : const Color(0xFFC62828), fontWeight: FontWeight.bold)),
+          content: Text(msg),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(context), child: const Text('返回')),
+            FilledButton(
+              onPressed: () {
+                Navigator.pop(ctx);
+                _stopped = true;
+                _startNewGame(forceNew: true);
+              },
+              child: const Text('再来一局'),
+            ),
+          ],
+        ),
+      );
+    });
   }
 
   void _toast(String msg) {
