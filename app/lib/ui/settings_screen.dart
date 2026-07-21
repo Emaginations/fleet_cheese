@@ -255,6 +255,10 @@ class _GamePrefsCardState extends State<GamePrefsCard> {
           setState(() => AppSettings.showRules = v);
           AppSettings.save();
         }),
+        _switchRow('作战指令气泡', AppSettings.showBattleSpeech, (v) {
+          setState(() => AppSettings.showBattleSpeech = v);
+          AppSettings.save();
+        }),
       ],
     );
   }

@@ -54,6 +54,7 @@ class AppSettings {
   static bool aiDebug = false;
   static bool deathMatch = false;
   static bool showRules = true;
+  static bool showBattleSpeech = true;
   static bool onboarded = false;
 
   static const int undoQuota = 4;
@@ -108,6 +109,7 @@ class AppSettings {
       aiDebug = p.getBool('aiDebug') ?? false;
       deathMatch = p.getBool('deathMatch') ?? false;
       showRules = p.getBool('showRules') ?? true;
+      showBattleSpeech = p.getBool('showBattleSpeech') ?? true;
       onboarded = p.getBool('onboarded') ?? false;
     } catch (_) {
       // 存储异常时使用默认值
@@ -132,6 +134,7 @@ class AppSettings {
       await p.setBool('aiDebug', aiDebug);
       await p.setBool('deathMatch', deathMatch);
       await p.setBool('showRules', showRules);
+      await p.setBool('showBattleSpeech', showBattleSpeech);
       await p.setBool('onboarded', onboarded);
     } catch (_) {}
   }

@@ -10,6 +10,7 @@ import '../ai/ai_client.dart';
 import '../rules_text.dart';
 import 'board_widget.dart';
 import 'movable_dialog.dart';
+import 'battle_speech.dart';
 
 enum GameMode { vsAI, sandbox, faceToFace, aiVsAi }
 
@@ -97,8 +98,10 @@ class _GameScreenState extends State<GameScreen> {
       final ai = AIClient(side: aiSide);
       if (aiSide == Side.red) { _aiRed = ai; } else { _aiBlue = ai; }
     } else if (widget.mode == GameMode.aiVsAi) {
+      // AI2未配置Key时回退使用AI1
+      final useAI2 = AppSettings.ai2HasKey;
       _aiRed = AIClient(side: Side.red);
-      _aiBlue = AIClient.forAI2(side: Side.blue);
+      _aiBlue = useAI2 ? AIClient.forAI2(side: Side.blue) : AIClient(side: Side.blue);
       final myPath = await _recorder.filePath;
       final prev = await GameRecorder.latestQpContent(excludePath: myPath);
       _aiRed!.previousGameQp = prev;
@@ -228,6 +231,15 @@ class _GameScreenState extends State<GameScreen> {
   void _afterPlyAdvanced() {
     if (!mounted) return;
     setState(() {});
+    // 作战指令气泡
+    if (AppSettings.showBattleSpeech && _state.ply > 0) {
+      final lastLine = _recorder.lines.isNotEmpty ? _recorder.lines.last : '';
+      final actions = QpParser.parseActions(lastLine);
+      if (actions.isNotEmpty) {
+        final speech = generateSpeech(_state.current.opponent, actions);
+        if (speech.isNotEmpty) showBattleSpeech(context, speech, _state.current.opponent);
+      }
+    }
     _showResultIfGameOver();
     if (_state.winner == null && !_stopped) {
       if (widget.mode == GameMode.aiVsAi) {
@@ -314,6 +326,8 @@ class _GameScreenState extends State<GameScreen> {
         actions: [
           if (!AppSettings.deathMatch && widget.mode != GameMode.aiVsAi)
             IconButton(icon: const Icon(Icons.undo), tooltip: '悔棋', onPressed: _handleUndo),
+          if (widget.mode == GameMode.vsAI || widget.mode == GameMode.aiVsAi)
+            IconButton(icon: Icon(_stopped ? Icons.play_arrow : Icons.pause), tooltip: _stopped ? '继续' : '暂停', onPressed: () { setState(() => _stopped = !_stopped); if (!_stopped) _maybeTriggerAI(); }),
           IconButton(icon: const Icon(Icons.replay), tooltip: '快速重开', onPressed: () { _stopped = true; _startNewGame(forceNew: true); }),
           if (AppSettings.aiDebug && _lastAIDebugContent != null)
             IconButton(icon: const Icon(Icons.bug_report), tooltip: 'AI完整推演', onPressed: _showDebugDialog),
