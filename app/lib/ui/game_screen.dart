@@ -349,7 +349,7 @@ class _GameScreenState extends State<GameScreen> {
     return InkWell(
       onTap: _showDebugDialog,
       child: Container(width: double.infinity, height: 50, color: const Color(0xFF0D1B2E), padding: const EdgeInsets.all(6),
-        child: SingleChildScrollView(child: SelectableText(_lastAIDebugContent ?? '', style: const TextStyle(fontFamily: 'monospace', fontSize: 10, color: Color(0xFF90CAF9))))),
+        child: SingleChildScrollView(child: Text(_lastAIDebugContent ?? '', style: const TextStyle(fontFamily: 'monospace', fontSize: 10, color: Color(0xFF90CAF9))))),
     );
   }
 

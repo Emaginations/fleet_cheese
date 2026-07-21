@@ -30,18 +30,22 @@ class MovableDialog extends StatefulWidget {
     Color titleBg = const Color(0xFF92CDDB),
     Color titleFg = Colors.black87,
   }) {
-    return showDialog(
+    return showGeneralDialog(
       context: context,
+      barrierDismissible: true,
+      barrierLabel: '',
       barrierColor: Colors.black38,
-      builder: (_) => MovableDialog(
-        title: title,
-        content: content,
-        width: width,
-        height: height,
-        bgColor: bgColor,
-        titleBg: titleBg,
-        titleFg: titleFg,
-      ),
+      pageBuilder: (ctx, _, __) {
+        return MovableDialog(
+          title: title,
+          content: content,
+          width: width,
+          height: height,
+          bgColor: bgColor,
+          titleBg: titleBg,
+          titleFg: titleFg,
+        );
+      },
     );
   }
 
@@ -52,6 +56,7 @@ class MovableDialog extends StatefulWidget {
 class _MovableDialogState extends State<MovableDialog> {
   Offset _pos = Offset.zero;
   bool _init = false;
+  Offset? _dragStart;
 
   @override
   Widget build(BuildContext context) {
@@ -83,9 +88,19 @@ class _MovableDialogState extends State<MovableDialog> {
               ),
               child: Column(
                 children: [
-                  // 可拖动的标题栏
-                  GestureDetector(
-                    onPanUpdate: (d) => setState(() => _pos += d.delta),
+                  // 标题栏：使用 Listener 原始指针事件实现跨平台拖动
+                  Listener(
+                    onPointerDown: (e) => _dragStart = e.position,
+                    onPointerMove: (e) {
+                      if (_dragStart != null) {
+                        setState(() {
+                          _pos += e.position - _dragStart!;
+                          _dragStart = e.position;
+                        });
+                      }
+                    },
+                    onPointerUp: (_) => _dragStart = null,
+                    onPointerCancel: (_) => _dragStart = null,
                     child: Container(
                       height: 44,
                       decoration: BoxDecoration(

@@ -366,7 +366,9 @@ class GameController {
       if (!intercepted) {
         final victim = board.at(order.target);
         if (victim != null) {
-          if (victim.type == PieceType.submarine) {
+          if (victim.type == PieceType.submarine ||
+              victim.type == PieceType.aircraft ||
+              victim.type == PieceType.awacs) {
             immune = true;
           } else {
             hit = true;
