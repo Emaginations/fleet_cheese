@@ -9,6 +9,7 @@ import '../save_game.dart';
 import '../ai/ai_client.dart';
 import '../rules_text.dart';
 import 'board_widget.dart';
+import 'movable_dialog.dart';
 
 enum GameMode { vsAI, sandbox, faceToFace, aiVsAi }
 
@@ -326,27 +327,22 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   void _showLogDialog() {
-    showDialog(context: context, builder: (_) => AlertDialog(
-      backgroundColor: Colors.white, title: const Text('棋谱与对局记录'),
-      content: SizedBox(width: 520, height: 560, child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        const Text('— 棋谱 —', style: TextStyle(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 4),
-        SelectableText(_recorder.content, style: const TextStyle(fontSize: 12, height: 1.5)),
-        const Divider(height: 20),
-        const Text('— 日志 —', style: TextStyle(fontWeight: FontWeight.bold)),
-        const SizedBox(height: 4),
-        for (final e in _state.log) SelectableText('[${e.round}] ${e.side.label}·${e.text}', style: TextStyle(color: e.side==Side.red?const Color(0xFFC62828):const Color(0xFF1565C0), fontSize: 11.5)),
-      ]))),
-      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('关闭'))],
-    ));
+    MovableDialog.show(context, title: '棋谱与对局记录', width: 520, height: 560, content: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      const Text('— 棋谱 —', style: TextStyle(fontWeight: FontWeight.bold)),
+      const SizedBox(height: 4),
+      SelectableText(_recorder.content, style: const TextStyle(fontSize: 12, height: 1.5)),
+      const Divider(height: 20),
+      const Text('— 日志 —', style: TextStyle(fontWeight: FontWeight.bold)),
+      const SizedBox(height: 4),
+      for (final e in _state.log) SelectableText('[${e.round}] ${e.side.label}·${e.text}', style: TextStyle(color: e.side==Side.red?const Color(0xFFC62828):const Color(0xFF1565C0), fontSize: 11.5)),
+    ])));
   }
 
   void _showDebugDialog() {
-    showDialog(context: context, builder: (_) => AlertDialog(
-      backgroundColor: const Color(0xFF0D1B2E), title: const Text('AI完整推演', style: TextStyle(color: Color(0xFF90CAF9))),
-      content: SizedBox(width: 520, height: 560, child: SingleChildScrollView(child: SelectableText(_lastAIDebugContent ?? '', style: const TextStyle(color: Colors.white70, fontSize: 12, fontFamily: 'monospace')))),
-      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('关闭'))],
-    ));
+    MovableDialog.show(context, title: 'AI完整推演', width: 520, height: 560,
+      bgColor: const Color(0xFF0D1B2E), titleBg: const Color(0xFF1A3A5C), titleFg: const Color(0xFF90CAF9),
+      content: SingleChildScrollView(child: SelectableText(_lastAIDebugContent ?? '', style: const TextStyle(color: Colors.white70, fontSize: 12, fontFamily: 'monospace'))),
+    );
   }
 
   Widget _buildDebugMini() {
