@@ -74,7 +74,7 @@ class _GameScreenState extends State<GameScreen> {
       if (saved != null) {
         final (savedState, qpLines) = saved;
         _state = savedState;
-        _recorder = GameRecorder(firstMover: _state.firstMover);
+        _recorder = GameRecorder(firstMover: _state.firstMover, modeLabel: widget.mode.label);
         _recorder.lines.addAll(qpLines);
         _controller = GameController(state: _state, recorder: _recorder);
         _state.addLog('已恢复未完成的对局（第${_state.round}回合）', side: _state.current);
@@ -85,7 +85,7 @@ class _GameScreenState extends State<GameScreen> {
     if (!restored) {
       final chosen = AppSettings.firstMover;
       _state = GameState(firstMoverChoice: chosen);
-      _recorder = GameRecorder(firstMover: _state.firstMover);
+      _recorder = GameRecorder(firstMover: _state.firstMover, modeLabel: widget.mode.label);
       _controller = GameController(state: _state, recorder: _recorder);
       final way = chosen == null ? 'd2投掷' : '指定';
       _state.addLog('$way决定先手：${_state.firstMover.fullLabel}', side: _state.firstMover);
@@ -319,7 +319,7 @@ class _GameScreenState extends State<GameScreen> {
             const Spacer(),
             const Text('点击查看完整棋谱 ▸', style: TextStyle(fontSize: 10, color: Colors.black38)),
           ]),
-          Expanded(child: SingleChildScrollView(child: Text(pieceRuleText(s.piece.type), style: const TextStyle(fontSize: 10.5, color: Colors.black87)))),
+          Expanded(child: SingleChildScrollView(child: SelectableText(pieceRuleText(s.piece.type), style: const TextStyle(fontSize: 10.5, color: Colors.black87)))),
         ]),
       ),
     );
@@ -335,7 +335,7 @@ class _GameScreenState extends State<GameScreen> {
         const Divider(height: 20),
         const Text('— 日志 —', style: TextStyle(fontWeight: FontWeight.bold)),
         const SizedBox(height: 4),
-        for (final e in _state.log) Text('[${e.round}] ${e.side.label}·${e.text}', style: TextStyle(color: e.side==Side.red?const Color(0xFFC62828):const Color(0xFF1565C0), fontSize: 11.5)),
+        for (final e in _state.log) SelectableText('[${e.round}] ${e.side.label}·${e.text}', style: TextStyle(color: e.side==Side.red?const Color(0xFFC62828):const Color(0xFF1565C0), fontSize: 11.5)),
       ]))),
       actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('关闭'))],
     ));
@@ -393,7 +393,7 @@ class _GameScreenState extends State<GameScreen> {
       child: Container(width: double.infinity, height: 54, color: Colors.white.withAlpha(205), padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           for (final e in recent)
-            Text('[${e.round}] ${e.side.label}·${e.text}', style: TextStyle(color: e.side==Side.red?const Color(0xFFC62828):const Color(0xFF1565C0), fontSize: 10), maxLines: 1, overflow: TextOverflow.ellipsis),
+            SelectableText('[${e.round}] ${e.side.label}·${e.text}', style: TextStyle(color: e.side==Side.red?const Color(0xFFC62828):const Color(0xFF1565C0), fontSize: 10)),
         ])),
     );
   }

@@ -72,14 +72,15 @@ class GameRecorder {
   String? _filePath;
   final DateTime startTime;
   Side firstMover;
+  String modeLabel;
 
-  GameRecorder({required this.firstMover}) : startTime = DateTime.now();
+  GameRecorder({required this.firstMover, this.modeLabel = ''}) : startTime = DateTime.now();
 
   String get _header {
     final ts = startTime;
     final t =
         '${ts.year}-${_p(ts.month)}-${_p(ts.day)} ${_p(ts.hour)}:${_p(ts.minute)}:${_p(ts.second)}';
-    return '# 舰队象棋棋谱\n# 时间：$t\n# 先手：${firstMover.label}';
+    return '# 舰队象棋棋谱\n# 时间：$t\n# 模式：$modeLabel\n# 先手：${firstMover.label}';
   }
 
   static String _p(int n) => n.toString().padLeft(2, '0');

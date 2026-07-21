@@ -84,7 +84,7 @@ void main() {
   group('对局流程', () {
     GameController makeGame({Side first = Side.red}) {
       final state = GameState(firstMoverChoice: first);
-      final rec = GameRecorder(firstMover: first);
+      final rec = GameRecorder(firstMover: first, modeLabel: '测试');
       return GameController(state: state, recorder: rec);
     }
 
